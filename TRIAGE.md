@@ -49,26 +49,34 @@ the entire report generation — one failing check took down the whole tool.
 
 ## High
 
-### 3. Hardcoded "main" as base branch — `git.ts:23-24` 🔴
-`const base = baseRef ?? "main"` silently assumes "main" is always the
+### 3. Hardcoded "main" as base branch — `git.ts:23-24` ✅ FIXED
+`const base = baseRef ?? "main"` silently assumed "main" was always the
 default branch, with no fallback or detection.
 
 - **Root cause**: no lookup of the repo's actual default branch (e.g. via
   `git symbolic-ref` or checking for `master`).
-- **Why tests miss it**: the fixture repo's default branch is "main".
-- **Impact**: repos using "master" (or any other default branch name) get
+- **Why tests missed it**: the fixture repo's default branch is "main".
+- **Impact**: repos using "master" (or any other default branch name) got
   an empty or wrong changed-file list with no warning — silent incorrect
   output, not a crash.
+- **Fix applied**: added `resolveBaseRef()` — uses an explicit `baseRef` if
+  given, otherwise tries `"main"` then `"master"` (via
+  `git rev-parse --verify --quiet`), throwing a clear error if neither
+  exists rather than silently defaulting.
 
-### 4. Untracked files excluded from changed-file list — `git.ts:24` 🔴
-Only `git diff --name-status base...HEAD` is run, which only sees tracked
-diffs. New, not-yet-added files never appear.
+### 4. Untracked files excluded from changed-file list — `git.ts:24` ✅ FIXED
+Only `git diff --name-status base...HEAD` was run, which only sees tracked
+diffs. New, not-yet-added files never appeared.
 
 - **Root cause**: no call to something like `git status --porcelain` to
   pick up untracked files.
-- **Why tests miss it**: the fixture only exercises tracked changes.
+- **Why tests missed it**: the fixture only exercised tracked changes.
 - **Impact**: incomplete review coverage — new files a reviewer most wants
-  to see can be silently missing from the report.
+  to see could be silently missing from the report.
+- **Fix applied**: added `git ls-files --others --exclude-standard` and
+  appended results with `status: "untracked"` (the status already existed
+  on the `ChangedFile` type but was never populated). Gitignored files are
+  correctly excluded since `--exclude-standard` respects `.gitignore`.
 
 ### 5. No timeout on validation commands — `validation.ts:27` 🔴
 `exec(command, { cwd }, ...)` has no `timeout` option.
@@ -78,13 +86,16 @@ diffs. New, not-yet-added files never appear.
   `sleep 999999`) hangs report generation indefinitely — a self-inflicted
   denial of service with no recovery.
 
-### 6. No error handling for missing/invalid base ref — `git.ts:24` 🔴
-If `baseRef` (or the "main" default) doesn't exist in the repo,
-`execFileSync` throws a raw git error that propagates uncaught.
+### 6. No error handling for missing/invalid base ref — `git.ts:24` ✅ FIXED
+If `baseRef` (or the "main" default) didn't exist in the repo,
+`execFileSync` threw a raw git error that propagated uncaught.
 
 - **Root cause**: no try/catch or validation before diffing.
-- **Impact**: user sees a raw `fatal: ambiguous argument 'main...HEAD'`
+- **Impact**: user saw a raw `fatal: ambiguous argument 'main...HEAD'`
   stack trace instead of an actionable error message.
+- **Fix applied**: wrapped the `git diff` call in try/catch, rethrowing a
+  clear message: `Base ref "<ref>" not found in this repository. Pass
+  --base-ref <ref> to specify a valid one.`
 
 ### 7. MCP schema/handler property mismatch — `mcp-server.ts:35` ✅ FIXED
 The tool's Zod schema advertised `repositoryPath`, but the handler read
