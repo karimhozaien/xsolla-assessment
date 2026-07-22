@@ -1,0 +1,45 @@
+name: Public checks
+
+# Candidate-visible CI — the same signal a normal engineering PR would get.
+# Hidden checks (see the assessment harness repo) are NOT run here; they run
+# out-of-band against the pinned submission commit after the deadline.
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install
+        run: npm install
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Public tests
+        run: npm test
+
+      - name: MCP server smoke start
+        run: |
+          timeout 5 node --import tsx src/mcp-server.ts < /dev/null > mcp-smoke.log 2>&1 || true
+          echo "--- MCP server startup output ---"
+          cat mcp-smoke.log
+          # A clean startup produces no output and exits only on timeout (SIGTERM,
+          # exit 124) since it's waiting on stdio — that's success, not a crash.
+          if grep -qiE "error|exception|cannot find" mcp-smoke.log; then
+            echo "MCP server failed to start cleanly"
+            exit 1
+          fi

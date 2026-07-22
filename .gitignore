@@ -1,0 +1,6 @@
+node_modules/
+dist/
+review-report.md
+*.log
+test/fixtures/sample-repo/
+test/fixtures/.sample-repo-base-sha

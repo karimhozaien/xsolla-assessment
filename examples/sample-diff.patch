@@ -1,0 +1,7 @@
+diff --git a/app.js b/app.js
+index e921523..6be0237 100644
+--- a/app.js
++++ b/app.js
+@@ -1 +1 @@
+-console.log('hello');
++console.log('hello world');
