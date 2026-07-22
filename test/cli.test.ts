@@ -24,4 +24,30 @@ describe("inspector CLI (happy path only)", () => {
 
     expect(existsSync("review-report.md")).toBe(true);
   });
+
+  it("records a failing --validate command as a failed check instead of crashing the CLI", () => {
+    if (existsSync("review-report.md")) unlinkSync("review-report.md");
+
+    // Regression test for the promise-rejection crash: if this were still
+    // broken, execFileSync would throw here because the CLI process itself
+    // would exit non-zero / never finish writing the report.
+    execFileSync(
+      "npx",
+      [
+        "tsx",
+        "src/cli.ts",
+        "review",
+        "--repo",
+        "test/fixtures/sample-repo",
+        "--base-ref",
+        baseSha,
+        "--validate",
+        "exit 1",
+      ],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    const report = readFileSync("review-report.md", "utf8");
+    expect(report).toContain("exit 1");
+  });
 });

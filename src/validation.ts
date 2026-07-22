@@ -15,19 +15,12 @@ export type ValidationResult = {
  * metacharacters (`;`, `&&`, `|`, backticks, `$()`) can execute arbitrary
  * additional commands. This should use `execFile`/`spawn` with an argv
  * array so arguments are never shell-interpreted.
- *
- * SEEDED DEFECT #5 (error handling): a validation command that fails (or
- * whose shell rejects it, e.g. "command not found") rejects the returned
- * promise instead of resolving with a structured `failed` result — an
- * uncaught rejection here crashes the whole report generation instead of
- * recording one failed check.
  */
 export function runValidationCommand(command: string, cwd: string): Promise<ValidationResult> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     exec(command, { cwd }, (error, stdout, stderr) => {
       if (error) {
-        // BUG: rejects instead of resolving with a "failed" ValidationResult.
-        reject(error);
+        resolve({ command, status: "failed", output: stdout || stderr || error.message });
         return;
       }
       resolve({ command, status: "passed", output: stdout || stderr });
