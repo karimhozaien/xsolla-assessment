@@ -11,27 +11,57 @@ export type ReviewInput = {
 /**
  * Produces the Markdown review report.
  *
- * SEEDED DEFECT #6 (report quality): this just lists changed files and
- * dumps raw validation output. It does not distinguish errors, warnings,
- * successful checks, or missing/skipped checks — a reviewer (human or AI)
- * reading this report cannot tell "everything passed" from "everything
- * failed" without reading every line of raw output.
+ * Leads with a pass/fail summary so a reviewer (human or AI) can tell
+ * "everything passed" from "everything failed" at a glance, without
+ * reading through every line of raw validation output.
  */
 export function generateReviewReport(input: ReviewInput): string {
+  const { repositoryPath, changedFiles, validationResults } = input;
   const lines: string[] = [];
-  lines.push(`# Review Report: ${input.repositoryPath}`);
+
+  lines.push(`# Review Report: ${repositoryPath}`);
   lines.push("");
+
   lines.push("## Changed files");
-  for (const file of input.changedFiles) {
-    lines.push(`- ${file.path} (${file.status})`);
+  if (changedFiles.length === 0) {
+    lines.push("_No changed files detected._");
+  } else {
+    for (const file of changedFiles) {
+      lines.push(`- ${file.path} (${file.status})`);
+    }
   }
   lines.push("");
-  lines.push("## Validation output");
-  for (const result of input.validationResults) {
-    lines.push(`### ${result.command}`);
-    lines.push("```");
-    lines.push(result.output);
-    lines.push("```");
+
+  lines.push("## Validation summary");
+  if (validationResults.length === 0) {
+    lines.push("_No validation commands were run._");
+  } else {
+    const failedCount = validationResults.filter((result) => result.status === "failed").length;
+    lines.push(
+      failedCount === 0
+        ? `✅ All ${validationResults.length} check(s) passed.`
+        : `❌ ${failedCount} of ${validationResults.length} check(s) failed.`,
+    );
+    lines.push("");
+    for (const result of validationResults) {
+      const icon = result.status === "passed" ? "✅" : "❌";
+      lines.push(`- ${icon} \`${result.command}\``);
+    }
   }
+  lines.push("");
+
+  lines.push("## Validation output");
+  if (validationResults.length === 0) {
+    lines.push("_No validation commands were run._");
+  } else {
+    for (const result of validationResults) {
+      const icon = result.status === "passed" ? "✅" : "❌";
+      lines.push(`### ${icon} ${result.command}`);
+      lines.push("```");
+      lines.push(result.output);
+      lines.push("```");
+    }
+  }
+
   return lines.join("\n");
 }

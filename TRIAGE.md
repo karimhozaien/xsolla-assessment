@@ -145,17 +145,24 @@ value on spaces, truncating any path containing one.
   restored the fix) and a real-world run against an actual `.../my
   project` directory.
 
-### 9. Report doesn't distinguish pass/fail/skip — `review.ts:20-36` 🔴
-The report lists changed files and dumps raw validation stdout/stderr, with
-no summary of which checks passed, failed, or were skipped.
+### 9. Report doesn't distinguish pass/fail/skip — `review.ts:20-36` ✅ FIXED
+The report listed changed files and dumped raw validation stdout/stderr,
+with no summary of which checks passed, failed, or were skipped.
 
-- **Root cause**: report builder just concatenates raw output with no
+- **Root cause**: report builder just concatenated raw output with no
   status aggregation or visual distinction (e.g. ✅/❌ markers, summary
   counts).
-- **Why tests miss it**: tests only assert that expected substrings are
-  present, not that the report is actually legible.
-- **Impact**: a human or AI reader has to read every line of output to
-  figure out overall pass/fail — defeats the purpose of a review report.
+- **Why tests missed it**: tests only asserted that expected substrings
+  were present, not that the report was actually legible.
+- **Impact**: a human or AI reader had to read every line of output to
+  figure out overall pass/fail — defeated the purpose of a review report.
+- **Fix applied**: added a "Validation summary" section up top with an
+  overall count (`✅ All N check(s) passed.` / `❌ N of M check(s)
+  failed.`) and a per-command ✅/❌ checklist, plus the same icon on each
+  detailed output section below. Also made empty `changedFiles`/
+  `validationResults` explicit (`_No changed files detected._` /
+  `_No validation commands were run._`) instead of silently rendering an
+  empty section.
 
 ### 10. Test suite only covers the happy path — `test/cli.test.ts` 🔴
 The only CLI test uses a repo path with no spaces, a valid base ref, and no
