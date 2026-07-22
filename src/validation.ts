@@ -23,14 +23,23 @@ function tokenizeCommand(command: string): string[] {
   return tokens;
 }
 
+const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Runs a single validation command and returns its result.
  *
  * Uses `execFile` with an argv array instead of a shell string, so shell
  * metacharacters in a command are never interpreted by a shell — they pass
  * through as literal argument text instead of chaining additional commands.
+ *
+ * Bounded by `timeoutMs` so a hanging command (an accidental infinite loop,
+ * or a malicious `sleep 999999`) can't stall report generation forever.
  */
-export function runValidationCommand(command: string, cwd: string): Promise<ValidationResult> {
+export function runValidationCommand(
+  command: string,
+  cwd: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<ValidationResult> {
   return new Promise((resolve) => {
     const [program, ...args] = tokenizeCommand(command);
     if (!program) {
@@ -38,9 +47,12 @@ export function runValidationCommand(command: string, cwd: string): Promise<Vali
       return;
     }
 
-    execFile(program, args, { cwd }, (error, stdout, stderr) => {
+    execFile(program, args, { cwd, timeout: timeoutMs }, (error, stdout, stderr) => {
       if (error) {
-        resolve({ command, status: "failed", output: stdout || stderr || error.message });
+        const output = error.killed
+          ? `Command timed out after ${timeoutMs}ms`
+          : stdout || stderr || error.message;
+        resolve({ command, status: "failed", output });
         return;
       }
       resolve({ command, status: "passed", output: stdout || stderr });
@@ -51,10 +63,11 @@ export function runValidationCommand(command: string, cwd: string): Promise<Vali
 export async function runValidationCommands(
   commands: string[],
   cwd: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<ValidationResult[]> {
   const results: ValidationResult[] = [];
   for (const command of commands) {
-    results.push(await runValidationCommand(command, cwd));
+    results.push(await runValidationCommand(command, cwd, timeoutMs));
   }
   return results;
 }

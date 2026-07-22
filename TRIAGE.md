@@ -78,13 +78,19 @@ diffs. New, not-yet-added files never appeared.
   on the `ChangedFile` type but was never populated). Gitignored files are
   correctly excluded since `--exclude-standard` respects `.gitignore`.
 
-### 5. No timeout on validation commands — `validation.ts:27` 🔴
-`exec(command, { cwd }, ...)` has no `timeout` option.
+### 5. No timeout on validation commands — `validation.ts:27` ✅ FIXED
+`exec(command, { cwd }, ...)` had no `timeout` option.
 
 - **Root cause**: missing execution bound.
 - **Impact**: a hanging command (accidental infinite loop, or malicious
-  `sleep 999999`) hangs report generation indefinitely — a self-inflicted
+  `sleep 999999`) hung report generation indefinitely — a self-inflicted
   denial of service with no recovery.
+- **Fix applied**: `runValidationCommand`/`runValidationCommands` now take
+  an optional `timeoutMs` (default 5 minutes), passed to `execFile`'s
+  `timeout` option. A killed command resolves as `status: "failed"` with
+  output `Command timed out after <ms>ms` instead of hanging forever.
+  Verified live via the actual CLI with the default temporarily lowered to
+  2s: a genuinely hanging command was killed at ~2.2s with a clean report.
 
 ### 6. No error handling for missing/invalid base ref — `git.ts:24` ✅ FIXED
 If `baseRef` (or the "main" default) didn't exist in the repo,

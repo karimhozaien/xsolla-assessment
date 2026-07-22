@@ -116,6 +116,24 @@ describe("runValidationCommand", () => {
     // "|" and "cat" are passed to echo as literal arguments, not piped.
     expect(result.output.trim()).toBe("safe | cat");
   });
+
+  it("kills a hanging command instead of waiting forever, and resolves as failed", async () => {
+    // Simulates a runaway/malicious command (e.g. `sleep 999999`). Uses a
+    // short explicit timeout so this test itself doesn't hang.
+    const result = await runValidationCommand(
+      `node -e "setInterval(() => {}, 1000)"`,
+      process.cwd(),
+      200,
+    );
+    expect(result.status).toBe("failed");
+    expect(result.output).toContain("timed out");
+  }, 10_000);
+
+  it("does not time out a command that finishes well within the limit", async () => {
+    const result = await runValidationCommand("echo quick", process.cwd(), 5000);
+    expect(result.status).toBe("passed");
+    expect(result.output).toContain("quick");
+  });
 });
 
 describe("runValidationCommands", () => {
@@ -144,4 +162,15 @@ describe("runValidationCommands", () => {
   it("does not reject/throw even when every command fails", async () => {
     await expect(runValidationCommands([FAIL_CMD, FAIL_CMD], process.cwd())).resolves.toHaveLength(2);
   });
+
+  it("applies the given timeout to every command it runs", async () => {
+    const results = await runValidationCommands(
+      [`node -e "setInterval(() => {}, 1000)"`, "echo quick"],
+      process.cwd(),
+      200,
+    );
+    expect(results[0].status).toBe("failed");
+    expect(results[0].output).toContain("timed out");
+    expect(results[1].status).toBe("passed");
+  }, 10_000);
 });
