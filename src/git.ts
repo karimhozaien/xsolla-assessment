@@ -10,18 +10,52 @@ function runGit(repoPath: string, args: string[]): string {
   return execFileSync("git", args, { cwd: repoPath, encoding: "utf8" }).trim();
 }
 
+const DEFAULT_BRANCH_CANDIDATES = ["main", "master"];
+
+function refExists(repoPath: string, ref: string): boolean {
+  try {
+    runGit(repoPath, ["rev-parse", "--verify", "--quiet", ref]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Returns the files changed relative to a base ref.
- *
- * SEEDED DEFECT #2 (Git correctness): this hardcodes "main" as the base ref
- * and only inspects tracked diffs — it does not fall back to another
- * default branch name, and it never looks at untracked files. A repository
- * whose default branch is "master" (or one with untracked-but-relevant
- * files) will silently produce an incomplete or empty changed-file list.
+ * Resolves the base ref to diff against: an explicit `baseRef` if given,
+ * otherwise the first of the common default branch names that exists in
+ * the repo.
+ */
+function resolveBaseRef(repoPath: string, baseRef?: string): string {
+  if (baseRef) return baseRef;
+
+  for (const candidate of DEFAULT_BRANCH_CANDIDATES) {
+    if (refExists(repoPath, candidate)) return candidate;
+  }
+
+  throw new Error(
+    `Could not determine a default base branch (tried: ${DEFAULT_BRANCH_CANDIDATES.join(", ")}). ` +
+      "Pass --base-ref <ref> to specify one explicitly.",
+  );
+}
+
+/**
+ * Returns the files changed relative to a base ref, including both tracked
+ * diffs and untracked (but not ignored) files in the working tree.
  */
 export function getChangedFiles(repoPath: string, baseRef?: string): ChangedFile[] {
-  const base = baseRef ?? "main";
-  const diffOutput = runGit(repoPath, ["diff", "--name-status", `${base}...HEAD`]);
+  const base = resolveBaseRef(repoPath, baseRef);
+
+  let diffOutput: string;
+  try {
+    diffOutput = runGit(repoPath, ["diff", "--name-status", `${base}...HEAD`]);
+  } catch {
+    throw new Error(
+      `Base ref "${base}" not found in this repository. ` +
+        "Pass --base-ref <ref> to specify a valid one.",
+    );
+  }
+
   const files: ChangedFile[] = [];
 
   for (const line of diffOutput.split("\n")) {
@@ -31,6 +65,12 @@ export function getChangedFiles(repoPath: string, baseRef?: string): ChangedFile
     const status =
       statusChar === "A" ? "added" : statusChar === "D" ? "deleted" : "modified";
     files.push({ path, status });
+  }
+
+  const untrackedOutput = runGit(repoPath, ["ls-files", "--others", "--exclude-standard"]);
+  for (const path of untrackedOutput.split("\n")) {
+    if (!path.trim()) continue;
+    files.push({ path, status: "untracked" });
   }
 
   return files;

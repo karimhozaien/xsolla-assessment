@@ -1,5 +1,5 @@
 // Runs candidate/repo-configured validation commands (lint, tests, build, ...).
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 
 export type ValidationResult = {
   command: string;
@@ -8,26 +8,55 @@ export type ValidationResult = {
 };
 
 /**
+ * Splits a command string into a program and its arguments, respecting
+ * single- and double-quoted segments (e.g. `echo "hello world"` ->
+ * ["echo", "hello world"]). Shell operators like `;`, `&&`, `|`, and `$()`
+ * are not given any special meaning — they end up as literal argument text.
+ */
+function tokenizeCommand(command: string): string[] {
+  const tokens: string[] = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(command)) !== null) {
+    tokens.push(match[1] ?? match[2] ?? match[3]);
+  }
+  return tokens;
+}
+
+const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+// execFile's default maxBuffer is 1MB; verbose test/build output exceeds that
+// easily, and hitting it kills the child — falsely failing a passing command.
+const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+
+/**
  * Runs a single validation command and returns its result.
  *
- * SEEDED DEFECT #3 (unsafe command execution): this uses `exec()` with a
- * plain string, which runs through a shell. A command containing shell
- * metacharacters (`;`, `&&`, `|`, backticks, `$()`) can execute arbitrary
- * additional commands. This should use `execFile`/`spawn` with an argv
- * array so arguments are never shell-interpreted.
+ * Uses `execFile` with an argv array instead of a shell string, so shell
+ * metacharacters in a command are never interpreted by a shell — they pass
+ * through as literal argument text instead of chaining additional commands.
  *
- * SEEDED DEFECT #5 (error handling): a validation command that fails (or
- * whose shell rejects it, e.g. "command not found") rejects the returned
- * promise instead of resolving with a structured `failed` result — an
- * uncaught rejection here crashes the whole report generation instead of
- * recording one failed check.
+ * Bounded by `timeoutMs` so a hanging command (an accidental infinite loop,
+ * or a malicious `sleep 999999`) can't stall report generation forever.
  */
-export function runValidationCommand(command: string, cwd: string): Promise<ValidationResult> {
-  return new Promise((resolve, reject) => {
-    exec(command, { cwd }, (error, stdout, stderr) => {
+export function runValidationCommand(
+  command: string,
+  cwd: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<ValidationResult> {
+  return new Promise((resolve) => {
+    const [program, ...args] = tokenizeCommand(command);
+    if (!program) {
+      resolve({ command, status: "failed", output: "Empty validation command" });
+      return;
+    }
+
+    execFile(program, args, { cwd, timeout: timeoutMs, maxBuffer: MAX_OUTPUT_BYTES }, (error, stdout, stderr) => {
       if (error) {
-        // BUG: rejects instead of resolving with a "failed" ValidationResult.
-        reject(error);
+        const output = error.killed
+          ? `Command timed out after ${timeoutMs}ms`
+          : stdout || stderr || error.message;
+        resolve({ command, status: "failed", output });
         return;
       }
       resolve({ command, status: "passed", output: stdout || stderr });
@@ -38,10 +67,11 @@ export function runValidationCommand(command: string, cwd: string): Promise<Vali
 export async function runValidationCommands(
   commands: string[],
   cwd: string,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<ValidationResult[]> {
   const results: ValidationResult[] = [];
   for (const command of commands) {
-    results.push(await runValidationCommand(command, cwd));
+    results.push(await runValidationCommand(command, cwd, timeoutMs));
   }
   return results;
 }
