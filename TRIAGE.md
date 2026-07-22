@@ -86,14 +86,23 @@ If `baseRef` (or the "main" default) doesn't exist in the repo,
 - **Impact**: user sees a raw `fatal: ambiguous argument 'main...HEAD'`
   stack trace instead of an actionable error message.
 
-### 7. MCP schema/handler property mismatch — `mcp-server.ts:35` 🔴
-The tool's Zod schema advertises `repositoryPath`, but the handler reads
-`input.repoPath` (note: `@ts-expect-error` is suppressing the type error).
+### 7. MCP schema/handler property mismatch — `mcp-server.ts:35` ✅ FIXED
+The tool's Zod schema advertised `repositoryPath`, but the handler read
+`input.repoPath` (note: `@ts-expect-error` was suppressing the type error).
 
 - **Root cause**: property name typo/mismatch between schema and handler.
-- **Why tests miss it**: the MCP server has no test coverage at all.
-- **Impact**: every MCP call resolves `repositoryPath` to `undefined`, so
-  the tool silently inspects `undefined` instead of the requested repo.
+- **Why tests missed it**: the MCP server had no test coverage at all.
+- **Impact**: every MCP call resolved `repositoryPath` to `undefined`, so
+  the tool silently inspected `undefined` instead of the requested repo —
+  a 100% failure rate with no workaround, unlike the other High-severity
+  issues which only fail under specific conditions.
+- **Fix applied**: extracted the handler body into an exported
+  `reviewRepository(input: ReviewRepositoryInput)` function with a typed
+  input (`repositoryPath: string`), so the property name is now enforced
+  by the type system instead of silently suppressed. Also guarded the
+  `server.connect()` startup behind an `import.meta.url` check so the
+  module can be imported and its logic tested without spinning up a real
+  stdio server.
 
 ---
 
