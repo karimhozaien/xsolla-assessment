@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, unlinkSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // SEEDED DEFECT #7 (testing gap): this only exercises the happy path (repo
@@ -31,6 +32,7 @@ describe("inspector CLI (happy path only)", () => {
     // Regression test for the promise-rejection crash: if this were still
     // broken, execFileSync would throw here because the CLI process itself
     // would exit non-zero / never finish writing the report.
+    const failingCommand = `node -e "process.exit(1)"`;
     execFileSync(
       "npx",
       [
@@ -42,12 +44,39 @@ describe("inspector CLI (happy path only)", () => {
         "--base-ref",
         baseSha,
         "--validate",
-        "exit 1",
+        failingCommand,
       ],
       { cwd: process.cwd(), encoding: "utf8" },
     );
 
     const report = readFileSync("review-report.md", "utf8");
-    expect(report).toContain("exit 1");
+    expect(report).toContain(failingCommand);
+  });
+
+  it("does not execute a second command chained via shell metacharacters", () => {
+    if (existsSync("review-report.md")) unlinkSync("review-report.md");
+
+    // Regression test for the shell-injection fix: a validate command with
+    // a chained shell operator must never run the second command.
+    const markerPath = join(process.cwd(), "injected-by-cli-test.txt");
+    if (existsSync(markerPath)) unlinkSync(markerPath);
+
+    execFileSync(
+      "npx",
+      [
+        "tsx",
+        "src/cli.ts",
+        "review",
+        "--repo",
+        "test/fixtures/sample-repo",
+        "--base-ref",
+        baseSha,
+        "--validate",
+        `echo safe && touch ${markerPath}`,
+      ],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
+
+    expect(existsSync(markerPath)).toBe(false);
   });
 });

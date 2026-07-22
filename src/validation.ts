@@ -1,5 +1,5 @@
 // Runs candidate/repo-configured validation commands (lint, tests, build, ...).
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 
 export type ValidationResult = {
   command: string;
@@ -8,17 +8,37 @@ export type ValidationResult = {
 };
 
 /**
+ * Splits a command string into a program and its arguments, respecting
+ * single- and double-quoted segments (e.g. `echo "hello world"` ->
+ * ["echo", "hello world"]). Shell operators like `;`, `&&`, `|`, and `$()`
+ * are not given any special meaning — they end up as literal argument text.
+ */
+function tokenizeCommand(command: string): string[] {
+  const tokens: string[] = [];
+  const pattern = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(command)) !== null) {
+    tokens.push(match[1] ?? match[2] ?? match[3]);
+  }
+  return tokens;
+}
+
+/**
  * Runs a single validation command and returns its result.
  *
- * SEEDED DEFECT #3 (unsafe command execution): this uses `exec()` with a
- * plain string, which runs through a shell. A command containing shell
- * metacharacters (`;`, `&&`, `|`, backticks, `$()`) can execute arbitrary
- * additional commands. This should use `execFile`/`spawn` with an argv
- * array so arguments are never shell-interpreted.
+ * Uses `execFile` with an argv array instead of a shell string, so shell
+ * metacharacters in a command are never interpreted by a shell — they pass
+ * through as literal argument text instead of chaining additional commands.
  */
 export function runValidationCommand(command: string, cwd: string): Promise<ValidationResult> {
   return new Promise((resolve) => {
-    exec(command, { cwd }, (error, stdout, stderr) => {
+    const [program, ...args] = tokenizeCommand(command);
+    if (!program) {
+      resolve({ command, status: "failed", output: "Empty validation command" });
+      return;
+    }
+
+    execFile(program, args, { cwd }, (error, stdout, stderr) => {
       if (error) {
         resolve({ command, status: "failed", output: stdout || stderr || error.message });
         return;
