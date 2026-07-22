@@ -19,21 +19,16 @@ type ParsedArgs = {
 /**
  * Parses `process.argv` into flags.
  *
- * SEEDED DEFECT #1 (CLI argument defect): this splits the raw argv on
- * whitespace-adjacent flags without honoring quoting, so a path containing
- * spaces (e.g. `--repo "./my project"`) is silently truncated at the first
- * space instead of being treated as one argument. Node/the shell already
- * hands this function a correctly-split `argv` array — the bug is that the
- * code re-splits `argv[i]` values on spaces "just in case", which breaks
- * exactly the case it was trying to handle.
+ * Node/the shell already hand this function a correctly-split `argv`
+ * array, so each flag's value is taken as-is — no re-splitting on
+ * whitespace, which would truncate paths containing spaces.
  */
 function parseArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = { command: argv[0] ?? "", validate: [] };
   for (let i = 1; i < argv.length; i++) {
     const token = argv[i];
     if (token === "--repo") {
-      // BUG: re-splitting an already-correct argv value on whitespace.
-      parsed.repo = argv[++i]?.split(" ")[0];
+      parsed.repo = argv[++i];
     } else if (token === "--format") {
       parsed.format = argv[++i];
     } else if (token === "--base-ref") {

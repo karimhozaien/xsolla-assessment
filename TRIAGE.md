@@ -125,17 +125,25 @@ The tool's Zod schema advertised `repositoryPath`, but the handler read
 
 ## Medium
 
-### 8. CLI re-splits already-correct argv values — `cli.ts:36` 🔴
-`parsed.repo = argv[++i]?.split(" ")[0]` re-splits a shell-provided argv
+### 8. CLI re-splits already-correct argv values — `cli.ts:36` ✅ FIXED
+`parsed.repo = argv[++i]?.split(" ")[0]` re-split a shell-provided argv
 value on spaces, truncating any path containing one.
 
 - **Root cause**: defensive-but-wrong assumption that argv might contain
   unsplit strings; Node/the shell already hand this function correctly
   split arguments.
-- **Example**: `--repo "./my project"` silently becomes `./my`.
-- **Why tests miss it**: the fixture path has no spaces.
-- **Impact**: breaks on any repo path with a space — common on macOS
-  (`~/Desktop/My Project`) and Windows.
+- **Example**: `--repo "./my project"` silently became `./my`.
+- **Why tests missed it**: the fixture path has no spaces.
+- **Impact**: broke on any repo path with a space — common on macOS
+  (`~/Desktop/My Project`) and Windows. Picked as the first Medium fix
+  since, unlike the High-severity issues, there was no workaround at all —
+  quoting the argument correctly didn't help, since the bug re-split an
+  already-correctly-parsed value.
+- **Fix applied**: `parsed.repo = argv[++i]` — take the argv value as-is.
+  Verified with a red/green check (reintroduced the bug, confirmed the new
+  test failed with the path truncated to a nonexistent directory, then
+  restored the fix) and a real-world run against an actual `.../my
+  project` directory.
 
 ### 9. Report doesn't distinguish pass/fail/skip — `review.ts:20-36` 🔴
 The report lists changed files and dumps raw validation stdout/stderr, with

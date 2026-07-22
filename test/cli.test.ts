@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, unlinkSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, unlinkSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -78,5 +79,40 @@ describe("inspector CLI (happy path only)", () => {
     );
 
     expect(existsSync(markerPath)).toBe(false);
+  });
+
+  it("handles a --repo path containing a space", () => {
+    if (existsSync("review-report.md")) unlinkSync("review-report.md");
+
+    // Regression test for the CLI argument-parsing bug: a repo path with a
+    // space (e.g. "~/Desktop/My Project") used to be silently truncated at
+    // the first space instead of treated as one argument.
+    const repoDir = mkdtempSync(join(tmpdir(), "cli space test "));
+    try {
+      execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repoDir });
+      execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repoDir });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+      writeFileSync(join(repoDir, "a.txt"), "one\n");
+      execFileSync("git", ["add", "a.txt"], { cwd: repoDir });
+      execFileSync("git", ["commit", "-qm", "initial"], { cwd: repoDir });
+      const baseShaForSpaceRepo = execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: repoDir,
+        encoding: "utf8",
+      }).trim();
+
+      writeFileSync(join(repoDir, "new-file.txt"), "not yet tracked\n");
+
+      execFileSync(
+        "npx",
+        ["tsx", "src/cli.ts", "review", "--repo", repoDir, "--base-ref", baseShaForSpaceRepo],
+        { cwd: process.cwd(), encoding: "utf8" },
+      );
+
+      const report = readFileSync("review-report.md", "utf8");
+      expect(report).toContain(`Review Report: ${repoDir}`);
+      expect(report).toContain("new-file.txt (untracked)");
+    } finally {
+      rmSync(repoDir, { recursive: true, force: true });
+    }
   });
 });
