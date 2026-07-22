@@ -164,14 +164,26 @@ with no summary of which checks passed, failed, or were skipped.
   `_No validation commands were run._`) instead of silently rendering an
   empty section.
 
-### 10. Test suite only covers the happy path — `test/cli.test.ts` 🔴
-The only CLI test uses a repo path with no spaces, a valid base ref, and no
-failing commands. It also depends on CWD and mutates fixtures in place
+### 10. Test suite only covers the happy path — `test/cli.test.ts` ✅ FIXED
+The only CLI test used a repo path with no spaces, a valid base ref, and no
+failing commands. It also depended on CWD and mutated fixtures in place
 rather than using an isolated temp dir.
 
 - **Root cause**: no negative-path or edge-case tests written.
-- **Impact**: none of the above defects (#1, #3, #4, #6, #7, #8) are
-  caught by CI — they only surface in real usage.
+- **Impact**: none of the above defects (#1, #3, #4, #6, #7, #8) were
+  caught by CI — they only surfaced in real usage.
+- **Fix applied**: over the course of fixing #1–#9, added dedicated test
+  files per module (`git.test.ts`, `validation.test.ts`,
+  `mcp-server.test.ts`) plus expanded `cli.test.ts`, most using isolated
+  temp git repos rather than the shared fixture. Added the remaining
+  negative-path gaps directly: missing `--repo` exits non-zero with a
+  clear message, an unknown command exits non-zero with a clear message,
+  and repeated `--validate` flags are all executed (not just the first).
+  Note: the three original `cli.test.ts` tests (happy path, failing
+  validate, shell injection) still share the pretest-regenerated
+  `test/fixtures/sample-repo` fixture rather than a fresh temp dir each —
+  acceptable since vitest runs tests within a file sequentially, but not
+  fully isolated if that ever changes.
 
 ---
 
