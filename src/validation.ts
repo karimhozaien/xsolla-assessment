@@ -25,6 +25,10 @@ function tokenizeCommand(command: string): string[] {
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+// execFile's default maxBuffer is 1MB; verbose test/build output exceeds that
+// easily, and hitting it kills the child — falsely failing a passing command.
+const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+
 /**
  * Runs a single validation command and returns its result.
  *
@@ -47,7 +51,7 @@ export function runValidationCommand(
       return;
     }
 
-    execFile(program, args, { cwd, timeout: timeoutMs }, (error, stdout, stderr) => {
+    execFile(program, args, { cwd, timeout: timeoutMs, maxBuffer: MAX_OUTPUT_BYTES }, (error, stdout, stderr) => {
       if (error) {
         const output = error.killed
           ? `Command timed out after ${timeoutMs}ms`

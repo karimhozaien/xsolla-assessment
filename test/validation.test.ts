@@ -134,6 +134,17 @@ describe("runValidationCommand", () => {
     expect(result.status).toBe("passed");
     expect(result.output).toContain("quick");
   });
+
+  it("does not falsely fail a passing command that produces more than 1MB of output", async () => {
+    // execFile's default maxBuffer (1MB) kills the child when exceeded,
+    // which used to mark a genuinely passing verbose command as failed.
+    const result = await runValidationCommand(
+      `node -e "process.stdout.write('x'.repeat(2 * 1024 * 1024)); console.log('done-marker')"`,
+      process.cwd(),
+    );
+    expect(result.status).toBe("passed");
+    expect(result.output).toContain("done-marker");
+  });
 });
 
 describe("runValidationCommands", () => {

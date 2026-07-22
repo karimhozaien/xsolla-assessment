@@ -219,6 +219,47 @@ called out directly in the file's own header comment).
 
 ---
 
+## Adversarial review findings (post-fix)
+
+After fixing #1–#10, I attacked the fixed code with hostile/edge inputs to
+find gaps the tests didn't cover. Results:
+
+### A. Passing command with >1MB output reported as failed — `validation.ts` ✅ FIXED
+`execFile`'s default `maxBuffer` is 1MB; Node kills the child when
+exceeded, so a genuinely passing but verbose command (common for test
+suites) was marked `failed`.
+- **Fix applied**: set `maxBuffer` to 32MB. Added a test that pushes 2MB of
+  output through a passing command and asserts `status: "passed"`.
+
+### B. Uncommitted changes to tracked files are invisible — `git.ts` 🔴 KNOWN LIMITATION
+`git diff base...HEAD` only sees committed history, so a tracked file that
+is modified-but-not-committed does not appear — even though brand-new
+untracked files now do (#4). The change-detection semantics are therefore
+inconsistent. Not fixed (out of time); would add `git diff --name-status`
+(no range) or `git status --porcelain` to capture working-tree changes.
+
+### C. CLI exits 0 even when a validation check fails — `cli.ts` 🔴 KNOWN LIMITATION
+The report shows ❌ but the process still exits 0, so wiring the tool into
+CI yields green builds on failing checks. Not fixed; would set
+`process.exitCode = 1` when any `ValidationResult.status === "failed"`.
+(Deliberately left as a decision point — some users want the report
+generated regardless of check status; this should be a `--fail-on-error`
+flag rather than a silent behavior change.)
+
+### D. Tokenizer mishandles mid-token quotes — `validation.ts` 🔴 KNOWN LIMITATION
+`--flag="a b"` is split into two args (`--flag="a` and `b"`) because the
+tokenizer only treats a quote as special at the start of a token. Leading
+quotes (`"a b"`) work. Not fixed; a full POSIX-style tokenizer (or asking
+callers to pass argv arrays) would resolve it. Low impact given typical
+`npm test` / `npm run lint` usage.
+
+### E. `--format` flag parsed but unused — `cli.ts` 🔴 KNOWN LIMITATION
+`--format` is documented in the README and parsed into `ParsedArgs`, but
+never affects output (only Markdown is produced). Either wire it up or
+drop it from the README.
+
+---
+
 ## Suggested Fix Order
 
 1. ✅ #2 Validation failure crash (done)
